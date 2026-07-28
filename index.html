@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>在庫入力</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  body {
+    font-family: sans-serif;
+    margin: 0;
+    padding: 16px;
+    background: #f5f5f5;
+  }
+  h2 { margin-top: 0; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+  .tabs button {
+    flex: 1;
+    padding: 10px;
+    border: 1px solid #1a73e8;
+    background: #fff;
+    color: #1a73e8;
+    border-radius: 6px;
+    font-size: 15px;
+  }
+  .tabs button.active { background: #1a73e8; color: #fff; }
+  #reader {
+    width: 100%;
+    max-width: 400px;
+    margin: 0 auto;
+  }
+  .card {
+    background: #fff;
+    border-radius: 8px;
+    padding: 16px;
+    margin-top: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  }
+  .field { margin-bottom: 10px; }
+  .field label { display: block; font-size: 12px; color: #666; }
+  .field .value { font-size: 18px; font-weight: bold; }
+  .searchRow { display: flex; gap: 8px; }
+  .searchRow input {
+    flex: 1;
+    font-size: 18px;
+    padding: 10px;
+    box-sizing: border-box;
+  }
+  .searchRow button {
+    padding: 10px 16px;
+    border: none;
+    border-radius: 6px;
+    background: #1a73e8;
+    color: #fff;
+    font-size: 16px;
+  }
+  .countRow { display: flex; align-items: center; gap: 8px; }
+  .countRow button {
+    width: 48px;
+    height: 48px;
+    font-size: 24px;
+    border: none;
+    border-radius: 6px;
+    background: #1a73e8;
+    color: #fff;
+  }
+  input[type=number] {
+    flex: 1;
+    font-size: 22px;
+    padding: 8px;
+    text-align: center;
+    box-sizing: border-box;
+  }
+  #submitBtn {
+    width: 100%;
+    font-size: 18px;
+    padding: 12px;
+    margin-top: 12px;
+    border: none;
+    border-radius: 6px;
+    background: #1a73e8;
+    color: #fff;
+  }
+  #submitBtn:disabled { background: #999; }
+  #scanBtn, #rescan {
+    width: 100%;
+    font-size: 16px;
+    padding: 12px;
+    border: none;
+    border-radius: 6px;
+    background: #1a73e8;
+    color: #fff;
+    margin-top: 8px;
+  }
+  .result { margin-top: 12px; padding: 12px; border-radius: 6px; font-weight: bold; white-space: pre-wrap; }
+  .ok { background: #e6f4ea; color: #137333; }
+  .ng { background: #fce8e6; color: #c5221f; }
+  .notfound { background: #fef7e0; color: #b06000; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+  <h2>在庫入力</h2>
+
+  <div class="tabs">
+    <button id="tabScan" class="active" onclick="switchTab('scan')">スキャン</button>
+    <button id="tabManual" onclick="switchTab('manual')">手動検索</button>
+  </div>
+
+  <div id="scanPane">
+    <button id="scanBtn" onclick="startScanner()">カメラでスキャン開始</button>
+    <div id="reader"></div>
+    <button id="rescan" class="hidden" onclick="startScanner()">もう一度スキャン</button>
+    <div id="cameraError" class="result ng hidden"></div>
+  </div>
+
+  <div id="manualPane" class="hidden">
+    <div class="searchRow">
+      <input type="text" id="searchInput" placeholder="SKUまたはEANを入力" inputmode="text">
+      <button onclick="manualSearch()">検索</button>
+    </div>
+  </div>
+
+  <div class="card hidden" id="form">
+    <div class="field"><label>SKU</label><div class="value" id="skuVal"></div></div>
+    <div class="field"><label>商品名</label><div class="value" id="nameVal"></div></div>
+    <div class="field"><label>F列（固定値）</label><div class="value" id="fVal"></div></div>
+    <div class="field">
+      <label>個数</label>
+      <div class="countRow">
+        <button type="button" onclick="changeCount(-1)">−</button>
+        <input type="number" id="countInput" inputmode="numeric">
+        <button type="button" onclick="changeCount(1)">＋</button>
+      </div>
+    </div>
+    <button id="submitBtn" onclick="submitCount()">登録する</button>
+  </div>
+
+  <div class="result hidden" id="resultBox"></div>
+
+<script>
+  // ここをApps Scriptの「デプロイを管理」で確認した /exec URL に置き換えてください
+  const API_URL = 'https://script.google.com/a/macros/pulsar.gg/s/AKfycbyGza0AmbggzCDHeFwK_ACKeDU6U1aOGSCHrKT5sDS968cbcPkaO4UGAcFkoxQb_867sQ/exec';
+
+  let currentRow = null;
+  let scanner = null;
+
+  function switchTab(tab) {
+    document.getElementById('tabScan').classList.toggle('active', tab === 'scan');
+    document.getElementById('tabManual').classList.toggle('active', tab === 'manual');
+    document.getElementById('scanPane').classList.toggle('hidden', tab !== 'scan');
+    document.getElementById('manualPane').classList.toggle('hidden', tab !== 'manual');
+    if (tab !== 'scan' && scanner) {
+      scanner.stop().catch(() => {});
+    }
+  }
+
+  function startScanner() {
+    document.getElementById('cameraError').classList.add('hidden');
+    document.getElementById('form').classList.add('hidden');
+    document.getElementById('resultBox').classList.add('hidden');
+    document.getElementById('scanBtn').classList.add('hidden');
+    document.getElementById('rescan').classList.add('hidden');
+    document.getElementById('reader').innerHTML = '';
+
+    scanner = new Html5Qrcode('reader', {
+      formatsToSupport: [
+        Html5QrcodeSupportedFormats.QR_CODE,
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.CODE_128
+      ]
+    });
+
+    scanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: 250 },
+      onScanSuccess
+    ).catch(err => {
+      const box = document.getElementById('cameraError');
+      box.classList.remove('hidden');
+      box.innerText = 'カメラを起動できませんでした: ' + err;
+      document.getElementById('scanBtn').classList.remove('hidden');
+    });
+  }
+
+  function onScanSuccess(decodedText) {
+    scanner.stop().then(() => {
+      document.getElementById('reader').innerHTML = '';
+      document.getElementById('rescan').classList.remove('hidden');
+      lookup(decodedText);
+    });
+  }
+
+  function manualSearch() {
+    const q = document.getElementById('searchInput').value;
+    if (!q) return;
+    lookup(q);
+  }
+
+  function lookup(query) {
+    fetch(API_URL + '?action=lookup&query=' + encodeURIComponent(query))
+      .then(r => r.json())
+      .then(showForm)
+      .catch(showError);
+  }
+
+  function showForm(result) {
+    if (!result.found) {
+      const box = document.getElementById('resultBox');
+      box.className = 'result notfound';
+      box.classList.remove('hidden');
+      box.innerText = '該当するSKU/EANが見つかりませんでした';
+      document.getElementById('form').classList.add('hidden');
+      return;
+    }
+    currentRow = result.row;
+    document.getElementById('skuVal').innerText = result.sku;
+    document.getElementById('nameVal').innerText = result.name;
+    document.getElementById('fVal').innerText = result.fValue;
+    document.getElementById('countInput').value = result.gValue || 0;
+    document.getElementById('form').classList.remove('hidden');
+    document.getElementById('resultBox').classList.add('hidden');
+  }
+
+  function changeCount(delta) {
+    const input = document.getElementById('countInput');
+    const current = Number(input.value) || 0;
+    input.value = current + delta;
+  }
+
+  function submitCount() {
+    const count = document.getElementById('countInput').value;
+    if (count === '') return;
+    document.getElementById('submitBtn').disabled = true;
+    fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // application/json だとCORSプリフライトで失敗するため
+      body: JSON.stringify({ action: 'submit', row: currentRow, count: count })
+    })
+      .then(r => r.json())
+      .then(showResult)
+      .catch(showError);
+  }
+
+  function showResult(res) {
+    document.getElementById('submitBtn').disabled = false;
+    const box = document.getElementById('resultBox');
+    box.classList.remove('hidden');
+    if (res.ok) {
+      box.className = 'result ok';
+      box.innerText = '登録しました（E列・F列と一致）';
+    } else {
+      box.className = 'result ng';
+      box.innerText = '登録しましたが不一致があります: ' + res.mismatches.join(' / ');
+    }
+  }
+
+  function showError(err) {
+    document.getElementById('submitBtn').disabled = false;
+    const box = document.getElementById('resultBox');
+    box.className = 'result ng';
+    box.classList.remove('hidden');
+    box.innerText = 'エラー: ' + err;
+  }
+</script>
+</body>
+</html>
