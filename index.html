@@ -82,7 +82,7 @@
     color: #fff;
   }
   #submitBtn:disabled { background: #999; }
-  #scanBtn, #rescan {
+  #scanBtn, #rescan, #torchBtn {
     width: 100%;
     font-size: 16px;
     padding: 12px;
@@ -111,6 +111,7 @@
     <button id="scanBtn" onclick="startScanner()">カメラでスキャン開始</button>
     <div id="reader"></div>
     <button id="rescan" class="hidden" onclick="startScanner()">もう一度スキャン</button>
+    <button id="torchBtn" class="hidden" onclick="toggleTorch()">🔦 ライトON/OFF</button>
     <div id="cameraError" class="result ng hidden"></div>
   </div>
 
@@ -140,7 +141,7 @@
 
 <script>
   // ここをApps Scriptの「デプロイを管理」で確認した /exec URL に置き換えてください
-  const API_URL = 'https://script.google.com/a/macros/pulsar.gg/s/AKfycbyGza0AmbggzCDHeFwK_ACKeDU6U1aOGSCHrKT5sDS968cbcPkaO4UGAcFkoxQb_867sQ/exec';
+  const API_URL = 'YOUR_APPS_SCRIPT_EXEC_URL_HERE';
 
   let currentRow = null;
   let scanner = null;
@@ -161,26 +162,51 @@
     document.getElementById('resultBox').classList.add('hidden');
     document.getElementById('scanBtn').classList.add('hidden');
     document.getElementById('rescan').classList.add('hidden');
+    document.getElementById('torchBtn').classList.add('hidden');
     document.getElementById('reader').innerHTML = '';
 
     scanner = new Html5Qrcode('reader', {
       formatsToSupport: [
-        Html5QrcodeSupportedFormats.QR_CODE,
         Html5QrcodeSupportedFormats.EAN_13,
         Html5QrcodeSupportedFormats.EAN_8,
-        Html5QrcodeSupportedFormats.CODE_128
-      ]
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.QR_CODE
+      ],
+      experimentalFeatures: {
+        useBarCodeDetectorIfSupported: true // 対応ブラウザではネイティブ機能を使い高速・高精度に
+      }
     });
 
     scanner.start(
       { facingMode: 'environment' },
-      { fps: 10, qrbox: 250 },
+      {
+        fps: 15, // 読み取り頻度を上げる（デフォルト10→15）
+        qrbox: { width: 280, height: 140 }, // バーコードに合わせて横長に
+        aspectRatio: 1.777778,
+        videoConstraints: {
+          facingMode: 'environment',
+          width: { ideal: 1920 },
+          height: { ideal: 1080 } // 解像度を上げて小さい文字/バーもくっきり
+        }
+      },
       onScanSuccess
-    ).catch(err => {
+    ).then(() => {
+      const capabilities = scanner.getRunningTrackCapabilities();
+      if (capabilities && capabilities.torch) {
+        document.getElementById('torchBtn').classList.remove('hidden');
+      }
+    }).catch(err => {
       const box = document.getElementById('cameraError');
       box.classList.remove('hidden');
       box.innerText = 'カメラを起動できませんでした: ' + err;
       document.getElementById('scanBtn').classList.remove('hidden');
+    });
+  }
+
+  function toggleTorch() {
+    const settings = scanner.getRunningTrackSettings();
+    scanner.applyVideoConstraints({
+      advanced: [{ torch: !settings.torch }]
     });
   }
 
