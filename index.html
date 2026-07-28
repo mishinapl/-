@@ -141,7 +141,7 @@
 
 <script>
   // ここをApps Scriptの「デプロイを管理」で確認した /exec URL に置き換えてください
-  const API_URL = 'YOUR_APPS_SCRIPT_EXEC_URL_HERE';
+  const API_URL = 'https://script.google.com/a/macros/pulsar.gg/s/AKfycbyGza0AmbggzCDHeFwK_ACKeDU6U1aOGSCHrKT5sDS968cbcPkaO4UGAcFkoxQb_867sQ/exec';
 
   let currentRow = null;
   let scanner = null;
@@ -168,25 +168,19 @@
     scanner = new Html5Qrcode('reader', {
       formatsToSupport: [
         Html5QrcodeSupportedFormats.EAN_13,
-        Html5QrcodeSupportedFormats.EAN_8,
-        Html5QrcodeSupportedFormats.CODE_128,
-        Html5QrcodeSupportedFormats.QR_CODE
-      ],
-      experimentalFeatures: {
-        useBarCodeDetectorIfSupported: true // 対応ブラウザではネイティブ機能を使い高速・高精度に
-      }
+        Html5QrcodeSupportedFormats.EAN_8
+      ]
     });
 
     scanner.start(
       { facingMode: 'environment' },
       {
-        fps: 15, // 読み取り頻度を上げる（デフォルト10→15）
+        fps: 15,
         qrbox: { width: 280, height: 140 }, // バーコードに合わせて横長に
-        aspectRatio: 1.777778,
         videoConstraints: {
           facingMode: 'environment',
           width: { ideal: 1920 },
-          height: { ideal: 1080 } // 解像度を上げて小さい文字/バーもくっきり
+          height: { ideal: 1080 }
         }
       },
       onScanSuccess
